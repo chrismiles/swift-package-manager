@@ -36,6 +36,9 @@ public struct BuildDescription: Codable {
     /// The map of test entry point commands.
     let testEntryPointCommands: [LLBuildManifest.CmdName: TestEntryPointTool]
 
+    /// The map of playground entry point commands.
+    let playgroundEntryPointCommands: [LLBuildManifest.CmdName: PlaygroundEntryPointTool]
+
     /// The map of copy commands.
     let copyCommands: [LLBuildManifest.CmdName: CopyTool]
 
@@ -70,6 +73,7 @@ public struct BuildDescription: Codable {
         swiftFrontendCommands: [LLBuildManifest.CmdName: SwiftFrontendTool],
         testDiscoveryCommands: [LLBuildManifest.CmdName: TestDiscoveryTool],
         testEntryPointCommands: [LLBuildManifest.CmdName: TestEntryPointTool],
+        playgroundEntryPointCommands: [LLBuildManifest.CmdName: PlaygroundEntryPointTool],
         copyCommands: [LLBuildManifest.CmdName: CopyTool],
         writeCommands: [LLBuildManifest.CmdName: WriteAuxiliaryFile],
         pluginDescriptions: [PluginBuildDescription]
@@ -80,6 +84,7 @@ public struct BuildDescription: Codable {
             swiftFrontendCommands: swiftFrontendCommands,
             testDiscoveryCommands: testDiscoveryCommands,
             testEntryPointCommands: testEntryPointCommands,
+            playgroundEntryPointCommands: playgroundEntryPointCommands,
             copyCommands: copyCommands,
             writeCommands: writeCommands,
             pluginDescriptions: pluginDescriptions,
@@ -93,6 +98,7 @@ public struct BuildDescription: Codable {
         swiftFrontendCommands: [LLBuildManifest.CmdName: SwiftFrontendTool],
         testDiscoveryCommands: [LLBuildManifest.CmdName: TestDiscoveryTool],
         testEntryPointCommands: [LLBuildManifest.CmdName: TestEntryPointTool],
+        playgroundEntryPointCommands: [LLBuildManifest.CmdName: PlaygroundEntryPointTool],
         copyCommands: [LLBuildManifest.CmdName: CopyTool],
         writeCommands: [LLBuildManifest.CmdName: WriteAuxiliaryFile],
         pluginDescriptions: [PluginBuildDescription],
@@ -102,6 +108,7 @@ public struct BuildDescription: Codable {
         self.swiftFrontendCommands = swiftFrontendCommands
         self.testDiscoveryCommands = testDiscoveryCommands
         self.testEntryPointCommands = testEntryPointCommands
+        self.playgroundEntryPointCommands = playgroundEntryPointCommands
         self.copyCommands = copyCommands
         self.writeCommands = writeCommands
         self.explicitTargetDependencyImportCheckingMode = plan.destinationBuildParameters.driverParameters

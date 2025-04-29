@@ -506,6 +506,7 @@ public final class UserToolchain: Toolchain {
             fileSystem: self.fileSystem
         )
     }
+#endif
 
     public func getSwiftPlaygroundHelper() throws -> AbsolutePath {
         // The helper would be located in `.build/<config>` directory when
@@ -522,7 +523,6 @@ public final class UserToolchain: Toolchain {
             fileSystem: self.fileSystem
         )
     }
-#endif
 
     internal static func deriveSwiftCFlags(
         triple: Basics.Triple,

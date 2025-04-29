@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
+import TSCUtility
 
 import struct Basics.AbsolutePath
 import class Basics.ObservabilitySystem
@@ -422,7 +423,7 @@ extension PackagePIFProjectBuilder {
                 .spm_mangledToBundleIdentifier()
             settings[.EXECUTABLE_NAME] = executableName
             settings[.CLANG_ENABLE_MODULES] = "YES"
-            settings[.GENERATE_MASTER_OBJECT_FILE] = "NO"
+            settings[.GENERATE_PRELINK_OBJECT_FILE] = "NO"
             settings[.STRIP_INSTALLED_PRODUCT] = "NO"
 
             // Macros build as executables, so they need slightly different
@@ -503,20 +504,14 @@ extension PackagePIFProjectBuilder {
         }
 
         // Additional settings for the linker.
-        let baselineOTHER_LDFLAGS: [String]
         let enableDuplicateLinkageCulling = UserDefaults.standard.bool(
             forKey: "IDESwiftPackagesEnableDuplicateLinkageCulling",
             defaultValue: true
         )
         if enableDuplicateLinkageCulling {
-            baselineOTHER_LDFLAGS = [
-                "-Wl,-no_warn_duplicate_libraries",
-                "$(inherited)"
-            ]
-        } else {
-            baselineOTHER_LDFLAGS = ["$(inherited)"]
+            impartedSettings[.LD_WARN_DUPLICATE_LIBRARIES] = "NO"
         }
-        impartedSettings[.OTHER_LDFLAGS] = (sourceModule.isCxx ? ["-lc++"] : []) + baselineOTHER_LDFLAGS
+        impartedSettings[.OTHER_LDFLAGS] = (sourceModule.isCxx ? ["-lc++"] : []) + ["$(inherited)"]
         impartedSettings[.OTHER_LDRFLAGS] = []
         log(
             .debug,

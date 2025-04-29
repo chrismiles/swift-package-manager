@@ -15,12 +15,14 @@ import Foundation
 import PackageGraph
 import PackageLoading
 import PackageModel
+import TSCUtility
 
 @_spi(SwiftPMInternal)
 import SPMBuildCore
 
 import func TSCBasic.memoize
 import func TSCBasic.topologicalSort
+import var TSCBasic.stdoutStream
 
 #if canImport(SwiftBuild)
 import enum SwiftBuild.ProjectModel
@@ -28,7 +30,7 @@ import enum SwiftBuild.ProjectModel
 
 /// The parameters required by `PIFBuilder`.
 struct PIFBuilderParameters {
-    let triple: Triple
+    let triple: Basics.Triple
 
     /// Whether the toolchain supports `-package-name` option.
     let isPackageAccessModifierSupported: Bool
@@ -97,7 +99,9 @@ public final class PIFBuilder {
     /// - Returns: The package graph in the JSON PIF format.
     func generatePIF(
         prettyPrint: Bool = true,
-        preservePIFModelStructure: Bool = false
+        preservePIFModelStructure: Bool = false,
+        printPIFManifestGraphviz: Bool = false,
+        buildParameters: BuildParameters
     ) throws -> String {
         #if canImport(SwiftBuild)
         let encoder = prettyPrint ? JSONEncoder.makeWithDefaults() : JSONEncoder()
@@ -106,14 +110,24 @@ public final class PIFBuilder {
             encoder.userInfo[.encodeForSwiftBuild] = true
         }
 
-        let topLevelObject = try self.construct()
+        let topLevelObject = try self.construct(buildParameters: buildParameters)
 
         // Sign the PIF objects before encoding it for Swift Build.
         try PIF.sign(workspace: topLevelObject.workspace)
 
         let pifData = try encoder.encode(topLevelObject)
         let pifString = String(decoding: pifData, as: UTF8.self)
-        
+
+        if printPIFManifestGraphviz {
+            // Print dot graph to stdout.
+            writePIF(topLevelObject.workspace, toDOT: stdoutStream)
+            stdoutStream.flush()
+
+            // Abort the build process, ensuring we don't add
+            // further noise to stdout (and break `dot` graph parsing).
+            throw PIFGenerationError.printedPIFManifestGraphviz
+        }
+
         return pifString
         #else
         fatalError("Swift Build support is not linked in.")
@@ -125,7 +139,7 @@ public final class PIFBuilder {
     private var cachedPIF: PIF.TopLevelObject?
 
     /// Constructs a `PIF.TopLevelObject` representing the package graph.
-    private func construct() throws -> PIF.TopLevelObject {
+    private func construct(buildParameters: BuildParameters) throws -> PIF.TopLevelObject {
         try memoize(to: &self.cachedPIF) {
             guard let rootPackage = self.graph.rootPackages.only else {
                 if self.graph.rootPackages.isEmpty {
@@ -161,12 +175,14 @@ public final class PIFBuilder {
             projects.append(
                 try buildAggregateProject(
                     packagesAndProjects: packagesAndProjects,
-                    observabilityScope: observabilityScope
+                    observabilityScope: observabilityScope,
+                    modulesGraph: graph,
+                    buildParameters: buildParameters
                 )
             )
 
             let workspace = PIF.Workspace(
-                guid: "Workspace:\(rootPackage.path.pathString)",
+                id: "Workspace:\(rootPackage.path.pathString)",
                 name: rootPackage.manifest.displayName, // TODO: use identity instead?
                 path: rootPackage.path,
                 projects: projects
@@ -184,7 +200,7 @@ public final class PIFBuilder {
         packageGraph: ModulesGraph,
         fileSystem: FileSystem,
         observabilityScope: ObservabilityScope,
-        preservePIFModelStructure: Bool
+        preservePIFModelStructure: Bool,
     ) throws -> String {
         let parameters = PIFBuilderParameters(buildParameters, supportedSwiftVersions: [])
         let builder = Self(
@@ -193,7 +209,7 @@ public final class PIFBuilder {
             fileSystem: fileSystem,
             observabilityScope: observabilityScope
         )
-        return try builder.generatePIF(preservePIFModelStructure: preservePIFModelStructure)
+        return try builder.generatePIF(preservePIFModelStructure: preservePIFModelStructure, buildParameters: buildParameters)
     }
 }
 
@@ -293,7 +309,9 @@ fileprivate final class PackagePIFBuilderDelegate: PackagePIFBuilder.BuildDelega
 
 fileprivate func buildAggregateProject(
     packagesAndProjects: [(package: ResolvedPackage, project: ProjectModel.Project)],
-    observabilityScope: ObservabilityScope
+    observabilityScope: ObservabilityScope,
+    modulesGraph: ModulesGraph,
+    buildParameters: BuildParameters
 ) throws -> ProjectModel.Project {
     precondition(!packagesAndProjects.isEmpty)
     
@@ -354,6 +372,13 @@ fileprivate func buildAggregateProject(
                     // conflicts with those from "PACKAGE-TARGET:Foo-dynamic".
                     continue
                 }
+
+                if let resolvedModule = modulesGraph.module(for: target.name) {
+                    guard modulesGraph.isInRootPackages(resolvedModule, satisfying: buildParameters.buildEnvironment) else {
+                        // Disconnected target, possibly due to platform when condition that isn't satisfied
+                        continue
+                    }
+                }
                 
                 aggregateProject[keyPath: allIncludingTestsTargetKeyPath].common.addDependency(
                     on: target.id,
@@ -404,6 +429,9 @@ public enum PIFGenerationError: Error {
         versions: [SwiftLanguageVersion],
         supportedVersions: [SwiftLanguageVersion]
     )
+
+    /// Early build termination when using `--print-pif-manifest-graph`.
+    case printedPIFManifestGraphviz
 }
 
 extension PIFGenerationError: CustomStringConvertible {
@@ -422,6 +450,9 @@ extension PIFGenerationError: CustomStringConvertible {
         ):
             "None of the Swift language versions used in target '\(target)' settings are supported." +
             " (given: \(given), supported: \(supported))"
+
+        case .printedPIFManifestGraphviz:
+            "Printed PIF manifest as graphviz"
         }
     }
 }

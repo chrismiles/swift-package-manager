@@ -859,6 +859,7 @@ class BuildCommandSwiftBuildTests: BuildCommandTestCases {
     }
 
     override func testParseableInterfaces() async throws {
+        try XCTSkipIfWorkingDirectoryUnsupported()
         try await fixture(name: "Miscellaneous/ParseableInterfaces") { fixturePath in
             do {
                 let result = try await build(["--enable-parseable-module-interfaces"], packagePath: fixturePath)
@@ -938,11 +939,7 @@ class BuildCommandSwiftBuildTests: BuildCommandTestCases {
 #endif
 
     override func testBuildSystemDefaultSettings() async throws {
-        #if os(Linux)
-        if FileManager.default.contents(atPath: "/etc/system-release").map( { String(decoding: $0, as: UTF8.self) == "Amazon Linux release 2 (Karoo)\n" } ) ?? false {
-            throw XCTSkip("Skipping SwiftBuild testing on Amazon Linux because of platform issues.")
-        }
-        #endif
+        try XCTSkipIfWorkingDirectoryUnsupported()
 
         if ProcessInfo.processInfo.environment["SWIFTPM_NO_SWBUILD_DEPENDENCY"] != nil {
             throw XCTSkip("SWIFTPM_NO_SWBUILD_DEPENDENCY is set so skipping because SwiftPM doesn't have the swift-build capability built inside.")
@@ -952,11 +949,9 @@ class BuildCommandSwiftBuildTests: BuildCommandTestCases {
     }
 
     override func testBuildCompleteMessage() async throws {
-        #if os(Linux)
-        throw XCTSkip("SWBINTTODO: Need to properly set LD_LIBRARY_PATH on linux")
-        #else
+        try XCTSkipIfWorkingDirectoryUnsupported()
+
         try await super.testBuildCompleteMessage()
-        #endif
     }
 
 }

@@ -33,6 +33,7 @@ import Workspace
 import XCTest
 
 import struct TSCBasic.ByteString
+import func TSCBasic.withTemporaryFile
 
 import enum TSCUtility.Diagnostics
 
@@ -785,6 +786,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             exe,
             [
                 "-enable-batch-mode",
+                "-serialize-diagnostics",
                 "-Onone",
                 "-enable-testing",
                 .equal(self.j),
@@ -803,6 +805,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             lib,
             [
                 "-enable-batch-mode",
+                "-serialize-diagnostics",
                 "-Onone",
                 "-enable-testing",
                 .equal(self.j),
@@ -1854,6 +1857,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             [
                 .anySequence,
                 "-enable-batch-mode",
+                "-serialize-diagnostics",
                 "-Onone",
                 "-enable-testing",
                 .equal(self.j),
@@ -2355,6 +2359,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             [
                 .anySequence,
                 "-enable-batch-mode",
+                "-serialize-diagnostics",
                 "-Onone",
                 "-enable-testing",
                 .equal(self.j),
@@ -2374,6 +2379,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             [
                 .anySequence,
                 "-enable-batch-mode",
+                "-serialize-diagnostics",
                 "-Onone",
                 "-enable-testing",
                 "-Xfrontend",
@@ -2852,6 +2858,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
         let matchText = try result.moduleBuildDescription(for: "exe").swift().compileArguments()
         let assertionText: [StringPattern] = [
             "-enable-batch-mode",
+            "-serialize-diagnostics",
             "-Onone",
             "-enable-testing",
             .equal(self.j),
@@ -3153,6 +3160,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             exe,
             [
                 "-enable-batch-mode",
+                "-serialize-diagnostics",
                 "-Onone",
                 "-enable-testing",
                 .equal(self.j),
@@ -3171,6 +3179,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             lib,
             [
                 "-enable-batch-mode",
+                "-serialize-diagnostics",
                 "-Onone",
                 "-enable-testing",
                 .equal(self.j),
@@ -3811,6 +3820,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
         let exe = try result.moduleBuildDescription(for: "exe").swift().compileArguments()
         XCTAssertMatch(exe, [
             "-enable-batch-mode",
+            "-serialize-diagnostics",
             "-Onone",
             "-enable-testing",
             .equal(self.j),
@@ -3875,7 +3885,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
                 observabilityScope: observability.topScope
             ))
         }
-        let supportingTriples: [Basics.Triple] = [.x86_64Linux, .x86_64MacOS]
+        let supportingTriples: [Basics.Triple] = [.x86_64Linux, .x86_64MacOS, .x86_64Windows]
         for triple in supportingTriples {
             let result = try await createResult(for: triple)
             let exe = try result.moduleBuildDescription(for: "exe").swift().compileArguments()
@@ -3884,7 +3894,7 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
             XCTAssertMatch(linkExe, [.contains("exe_main")])
         }
 
-        let unsupportingTriples: [Basics.Triple] = [.wasi, .windows]
+        let unsupportingTriples: [Basics.Triple] = [.wasi]
         for triple in unsupportingTriples {
             let result = try await createResult(for: triple)
             let exe = try result.moduleBuildDescription(for: "exe").swift().compileArguments()
@@ -6975,6 +6985,60 @@ class BuildPlanTestCase: BuildSystemProviderTestCase {
         print(myLib.additionalFlags)
         XCTAssertFalse(myLib.additionalFlags.contains(where: { $0.contains("-tool/include")}), "flags shouldn't contain tools items")
     }
+
+    func testDiagnosticsAreMentionedInOutputsFileMap() async throws {
+        let fs = InMemoryFileSystem(
+            emptyFiles:
+            "/Pkg/Sources/exe/main.swift",
+            "/Pkg/Sources/exe/aux.swift",
+            "/Pkg/Sources/lib/lib.swift"
+        )
+
+        let observability = ObservabilitySystem.makeForTesting()
+        let graph = try loadModulesGraph(
+            fileSystem: fs,
+            manifests: [
+                Manifest.createRootManifest(
+                    displayName: "Pkg",
+                    path: "/Pkg",
+                    targets: [
+                        TargetDescription(name: "exe", dependencies: ["lib"]),
+                        TargetDescription(name: "lib", dependencies: []),
+                    ]
+                ),
+            ],
+            observabilityScope: observability.topScope
+        )
+        XCTAssertNoDiagnostics(observability.diagnostics)
+
+        let plan = try await mockBuildPlan(
+            graph: graph,
+            linkingParameters: .init(
+                shouldLinkStaticSwiftStdlib: true
+            ),
+            fileSystem: fs,
+            observabilityScope: observability.topScope
+        )
+        let result = try BuildPlanResult(plan: plan)
+
+        result.checkProductsCount(1)
+        result.checkTargetsCount(2)
+
+        for module in result.targetMap {
+            let buildDescription = try module.swift()
+
+            try withTemporaryFile { file in
+                try buildDescription.writeOutputFileMap(to: .init(file.path.pathString))
+
+                let fileMap = try String(bytes: fs.readFileContents(file.path).contents, encoding: .utf8)
+
+                for diagnosticFile in buildDescription.diagnosticFiles {
+                    let fileName = diagnosticFile.pathString.replacingOccurrences(of: "\\", with: "\\\\")
+                    XCTAssertMatch(fileMap, .contains(fileName))
+                }
+            }
+        }
+    }
 }
 
 class BuildPlanNativeTests: BuildPlanTestCase {
@@ -7005,14 +7069,11 @@ class BuildPlanSwiftBuildTests: BuildPlanTestCase {
     }
 
     override func testPackageNameFlag() async throws {
+        try XCTSkipIfWorkingDirectoryUnsupported()
 #if os(Windows)
         throw XCTSkip("Skip until there is a resolution to the partial linking with Windows that results in a 'subsystem must be defined' error.")
 #endif
-
 #if os(Linux)
-        if FileManager.default.contents(atPath: "/etc/system-release").map { String(decoding: $0, as: UTF8.self) == "Amazon Linux release 2 (Karoo)\n" } ?? false {
-            throw XCTSkip("Skipping Swift Build testing on Amazon Linux because of platform issues.")
-        }
         // Linking error: "/usr/bin/ld.gold: fatal error: -pie and -static are incompatible".
         // Tracked by GitHub issue: https://github.com/swiftlang/swift-package-manager/issues/8499
         throw XCTSkip("Skipping Swift Build testing on Linux because of linking issues.")

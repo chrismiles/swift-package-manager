@@ -396,6 +396,7 @@ public final class MockWorkspace {
                 prefetchBasedOnResolvedFile: WorkspaceConfiguration.default.prefetchBasedOnResolvedFile,
                 shouldCreateMultipleTestProducts: WorkspaceConfiguration.default.shouldCreateMultipleTestProducts,
                 createREPLProduct: WorkspaceConfiguration.default.createREPLProduct,
+                createPlaygroundProduct: WorkspaceConfiguration.default.createPlaygroundProduct,
                 additionalFileRules: WorkspaceConfiguration.default.additionalFileRules,
                 sharedDependenciesCacheEnabled: WorkspaceConfiguration.default.sharedDependenciesCacheEnabled,
                 fingerprintCheckingMode: .strict,

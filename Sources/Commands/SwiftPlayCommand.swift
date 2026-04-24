@@ -154,6 +154,12 @@ public struct SwiftPlayCommand: AsyncSwiftCommand {
         swiftCommandState: SwiftCommandState,
         productsBuildParameters: BuildParameters
     ) async throws -> Result<String, Error> {
+        // Add build flag to enable the full Playground macro expansion
+        var productsBuildParameters = productsBuildParameters
+        var flags = productsBuildParameters.flags
+        flags.swiftCompilerFlags.append(BuildFlag(value: "-DPLAYGROUND_MACRO_EXPANSION_ENABLED", source: .commandLineOptions))
+        productsBuildParameters.flags = flags
+
         let buildSystem = try await swiftCommandState.createBuildSystem(
             explicitProduct: nil,
             productsBuildParameters: productsBuildParameters
